@@ -3,6 +3,7 @@ import { canPlace, shipCells, type Board, type Coord, type Orientation, type Shi
 import type { GameAction } from '../../state/gameReducer'
 import { Button } from '../components/Button'
 import { Grid } from '../components/Grid'
+import { ShipSilhouette } from '../components/ShipSilhouette'
 
 interface Preview {
   bow: Coord
@@ -140,11 +141,11 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
                   }`}
                   aria-label={`Rotate ${ship.name}`}
                 >
-                  <span>{ship.name}</span>
-                  <span className="flex gap-0.5">
-                    {Array.from({ length: ship.length }, (_, i) => (
-                      <span key={i} className="h-2.5 w-2.5 rounded-sm bg-slate-300" />
-                    ))}
+                  <span>
+                    {ship.name} <span className="text-slate-500">· {ship.length} squares</span>
+                  </span>
+                  <span className="h-4 rounded-sm bg-slate-300 text-ocean-900" style={{ width: `${ship.length}rem` }}>
+                    <ShipSilhouette kind={ship.kind} length={ship.length} dividers className="h-full w-full" />
                   </span>
                 </button>
               </li>

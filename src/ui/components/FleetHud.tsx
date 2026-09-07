@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { isSunk, type Board } from '../../engine'
+import { ShipSilhouette } from './ShipSilhouette'
 
 /** Ship silhouettes that fill red as they take damage — progress at a glance. */
 export function FleetHud({
@@ -29,7 +30,12 @@ export function FleetHud({
           return (
             <li key={ship.id} className={`flex items-center gap-2 text-xs ${sunk ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
               <span className={horizontal ? '' : 'w-20 truncate'}>{ship.name}</span>
-              <span className="flex gap-0.5" aria-label={`${ship.name}: ${sunk ? 'sunk' : `${hits}/${ship.length} hit`}`}>
+              <span
+                className={`relative flex h-3.5 rounded-sm ${sunk ? 'bg-sunk-500 text-ocean-950' : 'bg-slate-300 text-ocean-900'}`}
+                style={{ width: `${ship.length * 0.875}rem` }}
+                aria-label={`${ship.name}: ${sunk ? 'sunk' : `${hits}/${ship.length} hit`}`}
+              >
+                <ShipSilhouette kind={ship.kind} length={ship.length} dividers className="absolute inset-0 h-full w-full" />
                 {Array.from({ length: ship.length }, (_, i) => {
                   const state = sunk ? 'sunk' : i < hits ? 'hit' : 'ok'
                   return (
@@ -38,8 +44,12 @@ export function FleetHud({
                       initial={state === 'ok' ? false : { scale: 1.8, opacity: 0.4 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ type: 'spring', stiffness: 500, damping: 20, delay: sunk ? i * 0.05 : 0 }}
-                      className={`h-2.5 w-2.5 rounded-sm ${state === 'sunk' ? 'bg-sunk-500' : state === 'hit' ? 'bg-hit-500' : 'bg-slate-300'}`}
-                    />
+                      className={`relative flex flex-1 items-center justify-center text-[8px] font-black leading-none ${
+                        state === 'sunk' ? 'text-ocean-950' : state === 'hit' ? 'bg-hit-500/85 text-white' : ''
+                      }`}
+                    >
+                      {state === 'ok' ? '' : '✕'}
+                    </motion.span>
                   )
                 })}
               </span>
