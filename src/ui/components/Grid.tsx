@@ -49,7 +49,7 @@ export function Grid({
         style={{
           gridTemplateColumns: `1.2rem repeat(${BOARD_SIZE}, var(--cell))`,
           gridAutoRows: 'var(--cell)',
-          ['--cell' as string]: 'clamp(1.6rem, 7.5vw, 2.6rem)',
+          ['--cell' as string]: 'clamp(1.5rem, 6.8vw, 2.6rem)',
         }}
       >
         <div />

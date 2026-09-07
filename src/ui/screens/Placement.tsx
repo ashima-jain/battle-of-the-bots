@@ -59,7 +59,7 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
       if (!current) return
       const over = coordFromPoint(e.clientX, e.clientY)
       if (!over) {
-        dragRef.current = { ...current, preview: null }
+        dragRef.current = { ...current, moved: true, preview: null }
         setPreview(null)
         return
       }
