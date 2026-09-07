@@ -39,14 +39,6 @@ export interface GridProps {
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i)
 
-const SHORT: Record<string, string> = {
-  carrier: 'CARRIER',
-  battleship: 'BTLSHP',
-  cruiser: 'CRSR',
-  submarine: 'SUB',
-  destroyer: 'DD',
-}
-
 export function Grid({
   board,
   variant,
@@ -156,7 +148,7 @@ interface HullProps {
 function Hull({ ship, board, sunk, selected, compact, inert, onPointerDown, revealAnimated }: HullProps) {
   const horizontal = ship.orientation === 'horizontal'
   const cells = shipCells(ship)
-  const showLabel = !compact && ship.hits === 0
+  const showLabel = !compact
 
   const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!onPointerDown) return
@@ -193,8 +185,19 @@ function Hull({ ship, board, sunk, selected, compact, inert, onPointerDown, reve
         kind={ship.kind}
         length={ship.length}
         orientation={ship.orientation}
-        className={`pointer-events-none absolute inset-0 h-full w-full ${sunk ? 'text-ocean-950/80' : 'text-ocean-900'}`}
+        className={`pointer-events-none absolute ${
+          showLabel ? (horizontal ? 'inset-x-0 top-0 h-[68%] w-full' : 'inset-y-0 left-0 h-full w-[68%]') : 'inset-0 h-full w-full'
+        } ${sunk ? 'text-ocean-950/80' : 'text-ocean-900'}`}
       />
+      {showLabel && (
+        <span
+          className={`pointer-events-none absolute flex items-center justify-center font-bold uppercase leading-none tracking-[0.12em] ${
+            sunk ? 'bg-ocean-950/50 text-white/80' : 'bg-ocean-950/75 text-white'
+          } ${horizontal ? 'inset-x-0 bottom-0 h-[32%] text-[7px]' : 'inset-y-0 right-0 w-[32%] text-[7px]'}`}
+        >
+          <span className={horizontal ? '' : 'rotate-90 whitespace-nowrap'}>{ship.name}</span>
+        </span>
+      )}
       {cells.map((c, i) => {
         const hit = shotAt(board, c) === 'hit'
         const last = i === cells.length - 1
@@ -210,7 +213,9 @@ function Hull({ ship, board, sunk, selected, compact, inert, onPointerDown, reve
                 initial={{ scale: 0, rotate: -45 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 18, delay: sunk ? i * 0.06 : 0 }}
-                className={`absolute inset-[12%] flex items-center justify-center rounded-sm font-black ${
+                className={`absolute flex items-center justify-center rounded-sm font-black ${
+                  !showLabel ? 'inset-[12%]' : horizontal ? 'bottom-[36%] left-[14%] right-[14%] top-[6%]' : 'bottom-[14%] left-[6%] right-[36%] top-[14%]'
+                } ${
                   sunk ? 'bg-ocean-950/40 text-white' : 'bg-hit-500 text-white shadow-[0_0_10px_#ff4d5f]'
                 } ${compact ? 'text-[8px]' : 'text-xs'}`}
               >
@@ -220,16 +225,6 @@ function Hull({ ship, board, sunk, selected, compact, inert, onPointerDown, reve
           </span>
         )
       })}
-      {showLabel && (
-        <span
-          className={`pointer-events-none absolute flex items-center justify-center text-[7px] font-bold leading-none tracking-widest ${
-            sunk ? 'text-ocean-950/70' : selected ? 'text-ocean-950' : 'text-ocean-900/70'
-          } ${horizontal ? 'inset-x-0 bottom-0.5' : 'inset-y-0 right-0.5'}`}
-          style={horizontal ? undefined : { writingMode: 'vertical-rl' }}
-        >
-          {SHORT[ship.kind]}
-        </span>
-      )}
     </motion.div>
   )
 }

@@ -72,9 +72,9 @@ export function ShipSilhouette({ kind, length, orientation = 'horizontal', divid
       className={className}
     >
       <g transform={horizontal ? undefined : `translate(${U} 0) rotate(90)`}>
-        <path d={hull} fill="currentColor" fillOpacity={0.22} stroke="currentColor" strokeWidth={1.4} strokeLinejoin="round" />
+        <path d={hull} fill="currentColor" fillOpacity={0.3} stroke="currentColor" strokeWidth={1.8} strokeLinejoin="round" />
         {details.map((d, i) => (
-          <path key={i} d={d} fill="currentColor" fillOpacity={0.55} stroke="currentColor" strokeWidth={0.8} />
+          <path key={i} d={d} fill="currentColor" fillOpacity={0.7} stroke="currentColor" strokeWidth={0.8} />
         ))}
         {dividers &&
           Array.from({ length: length - 1 }, (_, i) => (
