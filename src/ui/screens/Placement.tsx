@@ -122,6 +122,7 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
           selectedShipId={selected}
           onShipPointerDown={onShipPointerDown}
           previewCells={preview}
+          dragging={!!draggingId}
         />
         <aside className="flex w-full max-w-xs flex-col gap-3 rounded-2xl bg-ocean-900/60 p-4 text-sm">
           <h2 className="text-xs uppercase tracking-widest text-slate-400">Your fleet</h2>
