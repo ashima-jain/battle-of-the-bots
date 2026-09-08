@@ -1,3 +1,4 @@
+import { MotionConfig } from 'framer-motion'
 import { useGame } from './hooks/useGame'
 import { Battle } from './screens/Battle'
 import { Landing } from './screens/Landing'
@@ -7,13 +8,20 @@ import { Result } from './screens/Result'
 export default function App() {
   const [state, dispatch] = useGame()
 
-  if (state.phase === 'landing') return <Landing onStart={() => dispatch({ type: 'START_SETUP' })} />
-  if (state.phase === 'placement') return <Placement board={state.playerBoard} dispatch={dispatch} />
+  let screen: React.ReactNode
+  if (state.phase === 'landing') screen = <Landing onStart={() => dispatch({ type: 'START_SETUP' })} />
+  else if (state.phase === 'placement') screen = <Placement board={state.playerBoard} dispatch={dispatch} />
+  else {
+    const gameOver = state.phase === 'gameOver'
+    screen = (
+      <>
+        <div inert={gameOver} aria-hidden={gameOver}>
+          <Battle state={state} dispatch={dispatch} />
+        </div>
+        {gameOver && <Result state={state} onRestart={() => dispatch({ type: 'RESTART' })} />}
+      </>
+    )
+  }
 
-  return (
-    <>
-      <Battle state={state} dispatch={dispatch} />
-      {state.phase === 'gameOver' && <Result state={state} onRestart={() => dispatch({ type: 'RESTART' })} />}
-    </>
-  )
+  return <MotionConfig reducedMotion="user">{screen}</MotionConfig>
 }

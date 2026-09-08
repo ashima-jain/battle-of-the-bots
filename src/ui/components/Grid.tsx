@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion'
+import { motion, useAnimate, useReducedMotion } from 'framer-motion'
+import { useEffect, useRef } from 'react'
 import {
   BOARD_SIZE,
   coordKey,
@@ -29,6 +30,8 @@ export interface GridProps {
   previewCells?: { cells: Coord[]; valid: boolean } | null
   /** While a ship is being dragged, hulls must not intercept pointer hit-testing. */
   dragging?: boolean
+  /** Wobble a ship whose move/rotate was rejected; bump `seq` to replay. */
+  shakeShip?: { shipId: string; seq: number } | null
   /** Small read-only rendering (mobile mini-map). */
   compact?: boolean
   /** Cell size when not compact: the focal board is `lg`, secondary boards `md`. */
@@ -38,6 +41,51 @@ export interface GridProps {
 }
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i)
+
+function cellButton(grid: ParentNode, coord: Coord): HTMLButtonElement | null {
+  return grid.querySelector<HTMLButtonElement>(`[data-coord="${coordKey(coord)}"]`)
+}
+
+/** Firing disables the cell, which drops keyboard focus to <body>; hand it to the nearest live cell instead. */
+function focusNearestLiveCell(grid: ParentNode, { row, col }: Coord) {
+  const ring = [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((d) => [
+    { row, col: col + d },
+    { row, col: col - d },
+    { row: row + d, col },
+    { row: row - d, col },
+  ])
+  for (const c of ring) {
+    const el = cellButton(grid, c)
+    if (el && !el.disabled) {
+      el.focus()
+      return
+    }
+  }
+}
+
+const ARROWS: Record<string, Coord> = {
+  ArrowUp: { row: -1, col: 0 },
+  ArrowDown: { row: 1, col: 0 },
+  ArrowLeft: { row: 0, col: -1 },
+  ArrowRight: { row: 0, col: 1 },
+}
+
+function moveFocusByArrow(e: React.KeyboardEvent<HTMLButtonElement>, from: Coord) {
+  const delta = ARROWS[e.key]
+  if (!delta) return
+  const grid = e.currentTarget.closest('[role="grid"]')
+  if (!grid) return
+  e.preventDefault()
+  let next = { row: from.row + delta.row, col: from.col + delta.col }
+  while (next.row >= 0 && next.col >= 0 && next.row < BOARD_SIZE && next.col < BOARD_SIZE) {
+    const el = cellButton(grid, next)
+    if (el && !el.disabled) {
+      el.focus()
+      return
+    }
+    next = { row: next.row + delta.row, col: next.col + delta.col }
+  }
+}
 
 export function Grid({
   board,
@@ -52,6 +100,7 @@ export function Grid({
   onShipPointerDown,
   previewCells,
   dragging,
+  shakeShip,
   compact,
   size = 'lg',
   ariaLabel,
@@ -63,9 +112,33 @@ export function Grid({
   const cellSize = compact
     ? '[--cell:clamp(0.9rem,4vw,1.2rem)]'
     : size === 'lg'
-      ? '[--cell:clamp(1.5rem,6.8vw,3rem)]'
-      : '[--cell:clamp(1.5rem,6.8vw,2.25rem)]'
+      ? '[--cell:clamp(1.35rem,6.8vw,3rem)]'
+      : '[--cell:clamp(1.35rem,6.8vw,2.25rem)]'
   const labelCol = compact ? '0.8rem' : '1.2rem'
+
+  const gridRef = useRef<HTMLDivElement>(null)
+  const keyboardFocus = useRef<Coord | null>(null)
+  const lastPointerAt = useRef(0)
+  const onCellFocus = (coord: Coord) => {
+    keyboardFocus.current = performance.now() - lastPointerAt.current > 300 ? coord : null
+  }
+  useEffect(() => {
+    // Framer Motion synthesises untrusted pointer events for keyboard presses; only real pointers count.
+    const mark = (e: PointerEvent) => {
+      if (!e.isTrusted) return
+      lastPointerAt.current = performance.now()
+      keyboardFocus.current = null
+    }
+    document.addEventListener('pointerdown', mark)
+    return () => document.removeEventListener('pointerdown', mark)
+  }, [])
+  useEffect(() => {
+    const last = keyboardFocus.current
+    if (!last || !gridRef.current) return
+    const active = document.activeElement
+    const lost = active === document.body || (active instanceof HTMLButtonElement && active.disabled)
+    if (lost) focusNearestLiveCell(gridRef.current, last)
+  })
 
   return (
     <section className={`flex flex-col items-center gap-2 ${className}`}>
@@ -76,6 +149,7 @@ export function Grid({
         </header>
       )}
       <div
+        ref={gridRef}
         role="grid"
         aria-label={ariaLabel}
         className={`relative grid select-none touch-none gap-[3px] rounded-2xl bg-ocean-900/80 shadow-[0_0_0_1px_#1b3a7a,0_20px_60px_-20px_#2f6fd6aa] ${
@@ -109,8 +183,20 @@ export function Grid({
             shipByCell={shipByCell}
             preview={preview}
             previewValid={previewCells?.valid ?? true}
+            onCellFocus={onCellFocus}
           />
         ))}
+        {previewCells &&
+          previewCells.cells.filter((c) => c.row >= 0 && c.col >= 0 && c.row < BOARD_SIZE && c.col < BOARD_SIZE).map((c) => (
+            <span
+              key={`pv-${coordKey(c)}`}
+              aria-hidden
+              style={{ gridColumn: c.col + 2, gridRow: c.row + 2 }}
+              className={`pointer-events-none z-20 rounded-md ring-2 ${
+                previewCells.valid ? 'bg-bot-400/60 ring-bot-400' : 'bg-hit-500/70 ring-hit-500'
+              }`}
+            />
+          ))}
         {board.ships.map((ship) => {
           const sunk = isSunk(ship)
           if (variant === 'enemy' && !sunk) return null
@@ -125,6 +211,7 @@ export function Grid({
               inert={dragging || !onShipPointerDown}
               onPointerDown={onShipPointerDown}
               revealAnimated={variant === 'enemy'}
+              shakeSeq={shakeShip?.shipId === ship.id ? shakeShip.seq : 0}
             />
           )
         })}
@@ -142,13 +229,21 @@ interface HullProps {
   inert: boolean
   onPointerDown?: (ship: Ship, coord: Coord, e: React.PointerEvent) => void
   revealAnimated: boolean
+  shakeSeq: number
 }
 
 /** One continuous ship piece spanning its cells, overlaid on the grid. */
-function Hull({ ship, board, sunk, selected, compact, inert, onPointerDown, revealAnimated }: HullProps) {
+function Hull({ ship, board, sunk, selected, compact, inert, onPointerDown, revealAnimated, shakeSeq }: HullProps) {
   const horizontal = ship.orientation === 'horizontal'
   const cells = shipCells(ship)
   const showLabel = !compact
+  const [scope, animate] = useAnimate()
+  const reduceMotion = useReducedMotion()
+
+  useEffect(() => {
+    if (!shakeSeq || !scope.current || reduceMotion) return
+    animate(scope.current, { x: [0, -5, 5, -4, 4, 0] }, { duration: 0.35 })
+  }, [shakeSeq, animate, scope, reduceMotion])
 
   const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!onPointerDown) return
@@ -166,6 +261,7 @@ function Hull({ ship, board, sunk, selected, compact, inert, onPointerDown, reve
       initial={revealAnimated ? { opacity: 0, scale: 0.85 } : false}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      ref={scope}
       onPointerDown={inert ? undefined : handleDown}
       style={{
         gridColumn: `${ship.bow.col + 2} / span ${horizontal ? ship.length : 1}`,
@@ -241,9 +337,23 @@ interface RowProps {
   shipByCell: Map<string, Ship>
   preview: Set<string>
   previewValid: boolean
+  onCellFocus?: (coord: Coord) => void
 }
 
-function RowCells({ row, board, variant, disabled, compact, onCellClick, lastShot, queued, shipByCell, preview, previewValid }: RowProps) {
+function RowCells({
+  row,
+  board,
+  variant,
+  disabled,
+  compact,
+  onCellClick,
+  lastShot,
+  queued,
+  shipByCell,
+  preview,
+  previewValid,
+  onCellFocus,
+}: RowProps) {
   return (
     <>
       <div
@@ -268,7 +378,7 @@ function RowCells({ row, board, variant, disabled, compact, onCellClick, lastSho
         if (clickable) bg += ' hover:bg-ocean-700/80'
         if (shot === 'miss') bg = 'bg-ocean-700/60'
         if (shot === 'hit' && !underHull) bg = 'bg-hit-500'
-        if (inPreview) bg = previewValid ? 'bg-bot-400/70' : 'bg-hit-500/70'
+        if (inPreview) bg = previewValid ? 'bg-bot-400/40' : 'bg-hit-500/40'
 
         const label = `${coordLabel(coord)}: ${
           shot === 'empty' ? (underHull ? `your ${ship!.name}` : 'unexplored') : shot === 'miss' ? 'miss' : sunk ? `sunk ${ship!.name}` : 'hit'
@@ -284,6 +394,8 @@ function RowCells({ row, board, variant, disabled, compact, onCellClick, lastSho
             style={{ gridColumn: col + 2, gridRow: row + 2 }}
             disabled={!clickable}
             onClick={clickable ? () => onCellClick?.(coord) : undefined}
+            onKeyDown={clickable ? (e) => moveFocusByArrow(e, coord) : undefined}
+            onFocus={() => onCellFocus?.(coord)}
             whileTap={clickable ? { scale: 0.85 } : undefined}
             className={`relative ${compact ? 'rounded-sm' : 'rounded-md'} ${bg} ${
               clickable ? 'cursor-crosshair' : ''

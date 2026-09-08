@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { canPlace, shipCells, type Board, type Coord, type Orientation, type Ship } from '../../engine'
+import { canPlace, moveShip, rotateShip, shipCells, type Board, type Coord, type Orientation, type Ship } from '../../engine'
 import type { GameAction } from '../../state/gameReducer'
 import { Button } from '../components/Button'
 import { Grid } from '../components/Grid'
@@ -32,6 +32,33 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState<{ shipId: string; reason: string; seq: number } | null>(null)
+
+  useEffect(() => {
+    if (!blocked) return
+    const id = window.setTimeout(() => setBlocked(null), 1600)
+    return () => window.clearTimeout(id)
+  }, [blocked])
+
+  const rotate = useCallback(
+    (shipId: string) => {
+      setSelected(shipId)
+      if (rotateShip(board.ships, shipId)) dispatch({ type: 'ROTATE_SHIP', shipId })
+      else setBlocked((b) => ({ shipId, reason: 'No room to rotate here — move the ship first.', seq: (b?.seq ?? 0) + 1 }))
+    },
+    [board.ships, dispatch],
+  )
+
+  const nudge = useCallback(
+    (shipId: string, dRow: number, dCol: number) => {
+      const ship = board.ships.find((s) => s.id === shipId)
+      if (!ship) return
+      const bow = { row: ship.bow.row + dRow, col: ship.bow.col + dCol }
+      if (moveShip(board.ships, shipId, bow, ship.orientation)) dispatch({ type: 'MOVE_SHIP', shipId, bow, orientation: ship.orientation })
+      else setBlocked((b) => ({ shipId, reason: 'Blocked — ships can’t overlap or leave the board.', seq: (b?.seq ?? 0) + 1 }))
+    },
+    [board.ships, dispatch],
+  )
 
   const previewFor = useCallback(
     (ship: Ship, grabOffset: number, over: Coord, orientation: Orientation) => {
@@ -73,7 +100,7 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
       const current = dragRef.current
       if (!current) return
       if (!current.moved) {
-        dispatch({ type: 'ROTATE_SHIP', shipId: current.ship.id })
+        rotate(current.ship.id)
       } else if (current.preview?.valid) {
         dispatch({ type: 'MOVE_SHIP', shipId: current.ship.id, bow: current.preview.bow, orientation: current.ship.orientation })
       }
@@ -89,15 +116,22 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
     }
-  }, [draggingId, dispatch, previewFor])
+  }, [draggingId, dispatch, previewFor, rotate])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.key === 'r' || e.key === 'R') && selected) dispatch({ type: 'ROTATE_SHIP', shipId: selected })
+      if (!selected) return
+      if (e.key === 'r' || e.key === 'R') rotate(selected)
+      else if (e.key === 'ArrowUp') nudge(selected, -1, 0)
+      else if (e.key === 'ArrowDown') nudge(selected, 1, 0)
+      else if (e.key === 'ArrowLeft') nudge(selected, 0, -1)
+      else if (e.key === 'ArrowRight') nudge(selected, 0, 1)
+      else return
+      e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, dispatch])
+  }, [selected, rotate, nudge])
 
   const displayBoard: Board =
     preview && draggingId ? { ...board, ships: board.ships.filter((s) => s.id !== draggingId) } : board
@@ -110,6 +144,9 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
         <p className="mt-2 max-w-md text-sm text-slate-400">
           We’ve placed your 5 ships randomly. Happy with it? Hit <b className="text-slate-200">Start battle</b>. Or{' '}
           <b className="text-slate-200">drag</b> a ship to move it and <b className="text-slate-200">tap</b> it to rotate.
+        </p>
+        <p role="status" aria-live="polite" className="mt-2 h-5 text-sm font-medium text-hit-500">
+          {blocked?.reason}
         </p>
       </header>
 
@@ -124,6 +161,7 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
           onShipPointerDown={onShipPointerDown}
           previewCells={preview}
           dragging={!!draggingId}
+          shakeShip={blocked ? { shipId: blocked.shipId, seq: blocked.seq } : null}
         />
         <aside className="flex w-full max-w-xs flex-col gap-3 rounded-2xl bg-ocean-900/60 p-4 text-sm">
           <h2 className="text-xs uppercase tracking-widest text-slate-400">Your fleet</h2>
@@ -132,14 +170,11 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
               <li key={ship.id}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelected(ship.id)
-                    dispatch({ type: 'ROTATE_SHIP', shipId: ship.id })
-                  }}
+                  onClick={() => rotate(ship.id)}
                   className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left hover:bg-ocean-800 ${
                     selected === ship.id ? 'bg-ocean-800 ring-1 ring-bot-400' : ''
                   }`}
-                  aria-label={`Rotate ${ship.name}`}
+                  aria-label={`Select and rotate ${ship.name}`}
                 >
                   <span>
                     {ship.name} <span className="text-slate-500">· {ship.length} squares</span>
@@ -151,7 +186,9 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
               </li>
             ))}
           </ul>
-          <p className="text-xs text-slate-500">Ships can touch but not overlap. Press R to rotate the selected ship.</p>
+          <p className="text-xs text-slate-500">
+            Ships can touch but not overlap. Keyboard: pick a ship above, then <kbd>arrow keys</kbd> move it and <kbd>R</kbd> rotates.
+          </p>
           <div className="mt-2 flex flex-col gap-2">
             <Button onClick={() => dispatch({ type: 'READY' })} className="py-3 text-base">
               Start battle →

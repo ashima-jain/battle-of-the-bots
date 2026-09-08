@@ -19,10 +19,10 @@ export function useGame(): [GameState, React.Dispatch<GameAction>] {
   }, [state.phase, state.aiShots, state.lastPlayerShot])
 
   useEffect(() => {
-    if (!state.commander) return
+    if (!state.commander || state.phase === 'gameOver') return
     const id = window.setTimeout(() => dispatch({ type: 'DISMISS_LINE' }), LINE_VISIBLE_MS)
     return () => window.clearTimeout(id)
-  }, [state.commander])
+  }, [state.commander, state.phase])
 
   useEffect(() => {
     if (state.phase !== 'playerTurn' || state.commanderMuted) return

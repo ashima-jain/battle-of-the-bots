@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
 import { BOARD_SIZE, type Board } from '../../engine'
 import type { GameState } from '../../state/gameReducer'
 import { Button } from '../components/Button'
@@ -35,6 +35,32 @@ export function Result({ state, onRestart }: { state: GameState; onRestart: () =
   const won = state.winner === 'player'
   const accuracy = state.playerShots ? Math.round((state.playerHits / state.playerShots) * 100) : 0
   const [copied, setCopied] = useState(false)
+  const reduceMotion = useReducedMotion()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const primaryRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const id = window.setTimeout(() => primaryRef.current?.focus(), 900)
+    return () => window.clearTimeout(id)
+  }, [])
+
+  // Keep Tab cycling inside the dialog; everything behind it is inert.
+  const trapFocus = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab' || !dialogRef.current) return
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'),
+    )
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
 
   useEffect(() => {
     if (!copied) return
@@ -56,12 +82,15 @@ export function Result({ state, onRestart }: { state: GameState; onRestart: () =
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ delay: 0.8 }}
-      className="fixed inset-0 z-20 flex items-center justify-center bg-ocean-950/80 p-4 backdrop-blur-sm"
+      ref={dialogRef}
+      onKeyDown={trapFocus}
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ocean-950/80 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="result-title"
     >
       {won &&
+        !reduceMotion &&
         CONFETTI.map((p) => (
           <motion.span
             key={p.id}
@@ -98,7 +127,7 @@ export function Result({ state, onRestart }: { state: GameState; onRestart: () =
         </dl>
 
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Button onClick={onRestart} className="px-8">
+          <Button ref={primaryRef} onClick={onRestart} className="px-8">
             Play again
           </Button>
           <Button variant="ghost" onClick={share}>

@@ -1,8 +1,9 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
-import { coordLabel, type Coord } from '../../engine'
+import { coordLabel, sameCoord, type Coord } from '../../engine'
 import type { GameAction, GameState } from '../../state/gameReducer'
 import { shipsRemaining } from '../../state/gameReducer'
+import { Button } from '../components/Button'
 import { CommanderBubble } from '../components/CommanderBubble'
 import { FleetHud } from '../components/FleetHud'
 import { Grid } from '../components/Grid'
@@ -17,7 +18,9 @@ interface QueuedShot {
 
 function hint(state: GameState, queued: QueuedShot | null): string {
   if (state.phase === 'aiTurn') {
-    return queued ? `Locked on ${coordLabel(queued.coord)} — firing as soon as BOLT is done.` : 'BOLT is aiming… (tap a square to queue your next shot)'
+    return queued
+      ? `Locked on ${coordLabel(queued.coord)} — fires when BOLT is done. Tap it again to cancel.`
+      : 'BOLT is aiming… (tap a square to queue your next shot)'
   }
   const shot = state.lastPlayerShot
   if (!shot) return 'Your turn. Tap any square on the enemy grid to fire.'
@@ -27,9 +30,12 @@ function hint(state: GameState, queued: QueuedShot | null): string {
 }
 
 const BANNER_MS = 1800
+/** Clicks this soon after the player's own shot are treated as an accidental double-click, not a queued shot. */
+const QUEUE_GUARD_MS = 250
 
 export function Battle({ state, dispatch }: { state: GameState; dispatch: React.Dispatch<GameAction> }) {
   const { playShot, play } = useSound(state.soundEnabled)
+  const reduceMotion = useReducedMotion()
   const lastPlayerRef = useRef(state.playerShots)
   const lastAiRef = useRef(state.aiShots)
 
@@ -51,19 +57,60 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
   const aiTurn = state.phase === 'aiTurn'
   const gameOver = state.phase === 'gameOver'
 
+  const gameOverPlayed = useRef(false)
+  useEffect(() => {
+    if (!gameOver) {
+      gameOverPlayed.current = false
+      return
+    }
+    if (gameOverPlayed.current) return
+    gameOverPlayed.current = true
+    play(state.winner === 'player' ? 'win' : 'lose')
+  }, [gameOver, state.winner, play])
+
   const [queuedRaw, setQueued] = useState<QueuedShot | null>(null)
   const queued = queuedRaw && queuedRaw.turn === state.turn && !gameOver ? queuedRaw : null
+  const lastFiredAt = useRef(0)
 
   useEffect(() => {
     if (playerTurn && queued) dispatch({ type: 'PLAYER_FIRE', coord: queued.coord })
   }, [playerTurn, queued, dispatch])
 
   const onEnemyCell = (coord: Coord) => {
-    if (playerTurn) dispatch({ type: 'PLAYER_FIRE', coord })
-    else if (aiTurn) setQueued({ coord, turn: state.turn })
+    if (playerTurn) {
+      lastFiredAt.current = performance.now()
+      dispatch({ type: 'PLAYER_FIRE', coord })
+    } else if (aiTurn) {
+      if (performance.now() - lastFiredAt.current < QUEUE_GUARD_MS) return
+      // Tapping the queued square again un-queues it.
+      setQueued((prev) => (prev && prev.turn === state.turn && sameCoord(prev.coord, coord) ? null : { coord, turn: state.turn }))
+    }
+  }
+
+  const [confirmRestart, setConfirmRestart] = useState(false)
+  const restart = () => {
+    if (gameOver || state.playerShots === 0) dispatch({ type: 'RESTART' })
+    else setConfirmRestart(true)
   }
 
   const [ownExpanded, setOwnExpanded] = useState(false)
+
+  // Reserve exactly as much space as the mobile commander dock occupies (it grows when a line wraps).
+  const dockRef = useRef<HTMLDivElement>(null)
+  const [dockHeight, setDockHeight] = useState(0)
+  useEffect(() => {
+    const el = dockRef.current
+    if (!el) return
+    const update = () => setDockHeight(el.offsetHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [])
 
   // Newest sink wins: player's nth shot precedes the AI's nth shot.
   const playerSink = state.lastPlayerShot?.kind === 'sunk' ? { seq: state.playerShots * 2 - 1, ship: state.lastPlayerShot.ship } : null
@@ -120,7 +167,10 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
   )
 
   return (
-    <main className="mx-auto flex min-h-full max-w-6xl flex-col gap-4 px-4 pb-28 pt-4 lg:gap-6 lg:pb-8">
+    <main
+      className="mx-auto flex min-h-full max-w-6xl flex-col gap-4 px-4 pt-4 lg:gap-6 lg:pb-8"
+      style={{ paddingBottom: dockHeight ? dockHeight + 16 : undefined }}
+    >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-black tracking-tight">
           Battle of the <span className="text-bot-400">Bots</span>
@@ -139,7 +189,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
           </button>
           <button
             type="button"
-            onClick={() => dispatch({ type: 'RESTART' })}
+            onClick={restart}
             className="rounded-full border border-ocean-700 px-3 py-1 text-slate-300 hover:border-hit-500"
           >
             Restart
@@ -186,7 +236,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
               queued={aiTurn ? queued?.coord ?? null : null}
             />
             <AnimatePresence>
-              {playerHitFlash && (
+              {playerHitFlash && !reduceMotion && (
                 <motion.div
                   key={`flash-${state.playerShots}`}
                   initial={{ opacity: 0.35 }}
@@ -248,7 +298,12 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
       <Legend />
 
       {/* Commander docked at the bottom on small screens so lines are readable while playing */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-ocean-800 bg-ocean-950/90 px-4 py-3 backdrop-blur lg:hidden">
+      <div
+        ref={dockRef}
+        className={`fixed inset-x-0 bottom-0 z-30 border-t border-ocean-800 bg-ocean-950/90 px-4 py-3 backdrop-blur lg:hidden ${
+          gameOver ? 'hidden' : ''
+        }`}
+      >
         <div className="mx-auto max-w-md">
           <CommanderBubble
             line={state.commander}
@@ -258,6 +313,36 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
           />
         </div>
       </div>
+
+      {confirmRestart && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="restart-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/80 p-4 backdrop-blur-sm"
+          onKeyDown={(e) => e.key === 'Escape' && setConfirmRestart(false)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-ocean-900 p-6 text-center shadow-[0_0_0_1px_#1b3a7a,0_30px_80px_-20px_#000]">
+            <h2 id="restart-title" className="text-lg font-bold">
+              Abandon this battle?
+            </h2>
+            <p className="mt-2 text-sm text-slate-400">You’ll start over with a fresh fleet.</p>
+            <div className="mt-5 flex justify-center gap-2">
+              <Button variant="ghost" autoFocus onClick={() => setConfirmRestart(false)}>
+                Keep playing
+              </Button>
+              <Button
+                onClick={() => {
+                  setConfirmRestart(false)
+                  dispatch({ type: 'RESTART' })
+                }}
+              >
+                Restart
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {sunkBanner && dismissedBanner !== sunkBanner.key && (

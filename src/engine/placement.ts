@@ -80,5 +80,5 @@ export function randomFleet(rng: Rng, specs: readonly ShipSpec[] = FLEET): Ship[
 export function isFleetValid(ships: readonly Ship[], specs: readonly ShipSpec[] = FLEET): boolean {
   if (ships.length !== specs.length) return false
   if (!specs.every((spec) => ships.some((s) => s.kind === spec.kind && s.length === spec.length))) return false
-  return ships.every((ship) => canPlace(ship, ships.filter((s) => s.id !== ship.id)))
+  return ships.every((ship, index) => canPlace(ship, ships.filter((_, otherIndex) => otherIndex !== index)))
 }

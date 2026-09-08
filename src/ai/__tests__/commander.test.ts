@@ -83,6 +83,19 @@ describe('chooseShot', () => {
     ])
   })
 
+  it('treats non-adjacent hits in the same row as separate ships', () => {
+    let memory = createAiMemory()
+    memory = observeShot(memory, { kind: 'hit', coord: { row: 5, col: 1 }, shipId: 'a' })
+    memory = observeShot(memory, { kind: 'hit', coord: { row: 5, col: 7 }, shipId: 'b' })
+    const candidates = targetCandidates(memory)
+    // Every candidate must touch one of the hits — no blind line extension to (5,0)/(5,8) only.
+    for (const c of candidates) {
+      const near = [{ row: 5, col: 1 }, { row: 5, col: 7 }].some((h) => Math.abs(h.row - c.row) + Math.abs(h.col - c.col) === 1)
+      expect(near).toBe(true)
+    }
+    expect(candidates).toHaveLength(8)
+  })
+
   it('handles two adjacent ships (hits that are not one ship)', () => {
     const a = createShip(FLEET[4], { row: 0, col: 0 }, 'horizontal') // (0,0)(0,1)
     const b = createShip(FLEET[2], { row: 1, col: 0 }, 'horizontal') // (1,0)(1,1)(1,2)

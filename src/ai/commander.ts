@@ -42,26 +42,14 @@ export function targetCandidates(memory: AiMemory): Coord[] {
   const hits = memory.openHits
   if (hits.length === 0) return []
 
+  // Only hits that touch another hit form a line; isolated hits (possibly a
+  // different ship in the same row/column) are probed via their neighbours.
   const lineCandidates: Coord[] = []
-  const rows = new Set(hits.map((h) => h.row))
-  const cols = new Set(hits.map((h) => h.col))
-
-  if (hits.length >= 2 && rows.size === 1) {
-    const row = hits[0].row
-    const sortedCols = hits.map((h) => h.col).sort((a, b) => a - b)
-    lineCandidates.push({ row, col: sortedCols[0] - 1 }, { row, col: sortedCols[sortedCols.length - 1] + 1 })
-  } else if (hits.length >= 2 && cols.size === 1) {
-    const col = hits[0].col
-    const sortedRows = hits.map((h) => h.row).sort((a, b) => a - b)
-    lineCandidates.push({ row: sortedRows[0] - 1, col }, { row: sortedRows[sortedRows.length - 1] + 1, col })
-  } else if (hits.length >= 2) {
-    // Hits on multiple ships that aren't collinear: work on each contiguous line separately.
-    for (const h of hits) {
-      const inRow = hits.filter((o) => o.row === h.row && Math.abs(o.col - h.col) === 1)
-      const inCol = hits.filter((o) => o.col === h.col && Math.abs(o.row - h.row) === 1)
-      if (inRow.length > 0) lineCandidates.push({ row: h.row, col: h.col - 1 }, { row: h.row, col: h.col + 1 })
-      if (inCol.length > 0) lineCandidates.push({ row: h.row - 1, col: h.col }, { row: h.row + 1, col: h.col })
-    }
+  for (const h of hits) {
+    const rowMate = hits.some((o) => o.row === h.row && Math.abs(o.col - h.col) === 1)
+    const colMate = hits.some((o) => o.col === h.col && Math.abs(o.row - h.row) === 1)
+    if (rowMate) lineCandidates.push({ row: h.row, col: h.col - 1 }, { row: h.row, col: h.col + 1 })
+    if (colMate) lineCandidates.push({ row: h.row - 1, col: h.col }, { row: h.row + 1, col: h.col })
   }
 
   const line = unfired(memory, lineCandidates)
