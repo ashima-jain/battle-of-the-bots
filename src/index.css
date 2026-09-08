@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --color-ocean-950: #060b1a;
+  --color-ocean-900: #0b1530;
+  --color-ocean-800: #12234d;
+  --color-ocean-700: #1b3a7a;
+  --color-ocean-500: #2f6fd6;
+  --color-ocean-300: #7fb3ff;
+  --color-bot-400: #38f2c8;
+  --color-bot-500: #14d1a8;
+  --color-hit-500: #ff5c5c;
+  --color-hit-700: #b32222;
+  --color-sunk-500: #ffb24a;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply bg-ocean-950 text-slate-100 font-display antialiased;
+  background-image: radial-gradient(1200px 600px at 50% -10%, #17307a55, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
