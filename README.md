@@ -1,32 +1,53 @@
-# React + TypeScript + Vite
+# Battle of the Bots
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A browser Battleship game against Commander BOLT, a smug AI naval commander.
 
-Currently, two official plugins are available:
+- **Play:** https://battle-of-the-bots.netlify.app
+- **Bugs found and fixed:** [BUGS.md](./BUGS.md)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## How to play
 
-## React Compiler
+Classic rules on a 10×10 board with five ships (5, 4, 3, 3, 2 squares). Drag your
+ships to place them (or just hit *Start battle*), then take turns firing at the
+enemy waters. Sink all five of BOLT's ships before he sinks yours. Ships may
+touch but not overlap; firing at a square twice is rejected and doesn't cost a
+turn. Keyboard play is supported (arrow keys, Enter, R to rotate).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+BOLT does **not** cheat: his AI only sees the squares it has fired at and their
+outcomes, never your board (see `src/ai/commander.ts`).
 
-## Expanding the Oxlint configuration
+## Running locally
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm test           # Vitest (56 tests)
+npm run lint       # oxlint
+npm run typecheck  # tsc
+npm run build      # production build in dist/
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Architecture
+
+The game rules are kept out of React so they can be unit-tested on their own:
+
+| Folder | Role | React? |
+|---|---|---|
+| `src/engine/` | Pure rules: board, placement validation, firing, sink/win detection, seeded RNG | no |
+| `src/ai/` | BOLT's targeting: parity "hunt" search, then "target" mode extending lines of adjacent hits | no |
+| `src/personality/` | BOLT's one-liners: event → line, with cooldowns and no-repeat pools | no |
+| `src/state/` | `gameReducer` state machine (`setup → playerTurn → aiTurn → gameOver`) wiring the three above | no |
+| `src/ui/` | React screens and components (Tailwind CSS, Framer Motion, Web Audio sounds) | yes |
+
+The personality module is intentionally separate from the engine: deleting it
+would not change a single game rule.
+
+### AI strength
+
+Over 500 simulated games BOLT sinks a full fleet in ~51 shots on average
+(median 52, 90% of games under 62). Random firing needs ~95, so he is a
+competent but beatable opponent.
+
+## Stack
+
+Vite · React 19 · TypeScript · Tailwind CSS v4 · Framer Motion · Vitest · oxlint · Netlify
