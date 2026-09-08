@@ -88,6 +88,27 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
   }
 
   const [confirmRestart, setConfirmRestart] = useState(false)
+  const confirmRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!confirmRestart) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmRestart(false)
+      else if (e.key === 'Tab' && confirmRef.current) {
+        const buttons = Array.from(confirmRef.current.querySelectorAll<HTMLButtonElement>('button'))
+        const first = buttons[0]
+        const last = buttons[buttons.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [confirmRestart])
   const restart = () => {
     if (gameOver || state.playerShots === 0) dispatch({ type: 'RESTART' })
     else setConfirmRestart(true)
@@ -120,8 +141,16 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
     gameOver || !newest
       ? null
       : newest === 'player'
-        ? { key: `p-${playerSink!.seq}`, text: `You sank the ${playerSink!.ship.name}!`, tone: 'good' as const }
-        : { key: `a-${aiSink!.seq}`, text: `BOLT sank your ${aiSink!.ship.name}`, tone: 'bad' as const }
+        ? {
+            key: `p-${playerSink!.seq}`,
+            text: `You sank the ${playerSink!.ship.name}!`,
+            tone: 'good' as const,
+          }
+        : {
+            key: `a-${aiSink!.seq}`,
+            text: `BOLT sank your ${aiSink!.ship.name}`,
+            tone: 'bad' as const,
+          }
   const bannerKey = sunkBanner?.key
   const [dismissedBanner, setDismissedBanner] = useState<string | undefined>()
 
@@ -167,91 +196,155 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
   )
 
   return (
-    <main
-      className="mx-auto flex min-h-full max-w-6xl flex-col gap-4 px-4 pt-4 lg:gap-6 lg:pb-8"
-      style={{ paddingBottom: dockHeight ? dockHeight + 16 : undefined }}
-    >
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-black tracking-tight">
-          Battle of the <span className="text-bot-400">Bots</span>
-        </h1>
-        <div className="flex items-center gap-2 text-xs">
-          <button
-            type="button"
-            onClick={() => {
-              dispatch({ type: 'TOGGLE_SOUND' })
-              play('click')
-            }}
-            className="rounded-full border border-ocean-700 px-3 py-1 text-slate-300 hover:border-bot-400"
-            aria-pressed={state.soundEnabled}
+    <>
+      <main
+        inert={confirmRestart}
+        aria-hidden={confirmRestart}
+        className="mx-auto flex min-h-full max-w-6xl flex-col gap-4 overflow-x-clip px-4 pt-4 lg:gap-6 lg:pb-8"
+        style={{ paddingBottom: dockHeight ? dockHeight + 16 : undefined }}
+      >
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-black tracking-tight">
+            Battle of the <span className="text-bot-400">Bots</span>
+          </h1>
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                dispatch({ type: 'TOGGLE_SOUND' })
+                play('click')
+              }}
+              className="rounded-full border border-ocean-700 px-3 py-1 text-slate-300 hover:border-bot-400"
+              aria-pressed={state.soundEnabled}
+            >
+              Sound {state.soundEnabled ? 'on' : 'off'}
+            </button>
+            <button
+              type="button"
+              onClick={restart}
+              className="rounded-full border border-ocean-700 px-3 py-1 text-slate-300 hover:border-hit-500"
+            >
+              Restart
+            </button>
+          </div>
+        </header>
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-start">
+          {/* Enemy waters — the focal point */}
+          <section className="flex flex-col items-center gap-3">
+            <header className="text-center">
+              <h2 className="text-lg font-semibold tracking-wide">Enemy waters</h2>
+              <p className="text-xs text-slate-400">Commander BOLT’s hidden fleet</p>
+            </header>
+
+            <motion.div
+              key={hint(state, queued)}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              role="status"
+              className={`max-w-md rounded-full px-4 py-1.5 text-center text-sm font-medium ${
+                playerTurn ? 'bg-bot-500/15 text-bot-400 ring-1 ring-bot-500/40' : 'bg-ocean-800 text-slate-300'
+              }`}
+            >
+              {hint(state, queued)}
+            </motion.div>
+
+            <motion.div
+              animate={
+                playerTurn
+                  ? {
+                      scale: 1,
+                      boxShadow: '0 0 0 3px #19e0b0, 0 0 40px -6px #19e0b0aa',
+                    }
+                  : {
+                      scale: 0.99,
+                      boxShadow: '0 0 0 3px #1b3a7a00, 0 0 0px 0px #19e0b000',
+                    }
+              }
+              transition={{ duration: 0.3 }}
+              className="relative rounded-2xl"
+            >
+              <Grid
+                board={state.aiBoard}
+                variant="enemy"
+                ariaLabel="Enemy board. Tap a square to fire."
+                disabled={gameOver}
+                onCellClick={onEnemyCell}
+                lastShot={state.lastPlayerShot?.coord ?? null}
+                queued={aiTurn ? (queued?.coord ?? null) : null}
+              />
+              <AnimatePresence>
+                {playerHitFlash && !reduceMotion && (
+                  <motion.div
+                    key={`flash-${state.playerShots}`}
+                    initial={{ opacity: 0.35 }}
+                    animate={{ opacity: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.45 }}
+                    className={`pointer-events-none absolute inset-0 rounded-2xl ${
+                      state.lastPlayerShot?.kind === 'sunk' ? 'bg-sunk-500' : 'bg-hit-500'
+                    }`}
+                  />
+                )}
+              </AnimatePresence>
+            </motion.div>
+
+            <div className="hidden w-full max-w-md lg:block">
+              <CommanderBubble
+                line={state.commander}
+                muted={state.commanderMuted}
+                thinking={aiTurn}
+                onToggleMute={() => dispatch({ type: 'TOGGLE_COMMANDER' })}
+              />
+            </div>
+
+            <div className="w-full max-w-md">
+              <FleetHud board={state.aiBoard} label="Enemy fleet" hideDamageUntilSunk horizontal />
+            </div>
+          </section>
+
+          {/* Your waters — secondary; mini-map on small screens */}
+          <motion.section
+            animate={aiHit ? { x: [0, -6, 6, -4, 4, 0] } : { x: 0 }}
+            transition={{ duration: 0.4 }}
+            key={`shake-${state.aiShots}`}
+            className="flex flex-col items-center gap-3"
           >
-            Sound {state.soundEnabled ? 'on' : 'off'}
-          </button>
-          <button
-            type="button"
-            onClick={restart}
-            className="rounded-full border border-ocean-700 px-3 py-1 text-slate-300 hover:border-hit-500"
-          >
-            Restart
-          </button>
+            <header className="text-center">
+              <h2 className="text-base font-semibold tracking-wide text-slate-300 lg:text-lg lg:text-slate-100">Your waters</h2>
+              <p className={`text-xs ${aiTurn ? 'text-hit-500' : 'text-slate-400'}`}>
+                {aiTurn ? 'BOLT is aiming here…' : 'BOLT fires here'}
+              </p>
+            </header>
+
+            <div className="hidden lg:block">{ownBoard(false)}</div>
+            <div className="flex flex-col items-center gap-2 lg:hidden">
+              {ownBoard(!ownExpanded)}
+              <button
+                type="button"
+                onClick={() => setOwnExpanded((v) => !v)}
+                className="text-xs text-slate-400 underline-offset-2 hover:text-bot-400 hover:underline"
+              >
+                {ownExpanded ? 'Shrink your board' : 'Expand your board'}
+              </button>
+            </div>
+
+            <div className="w-full max-w-md">
+              <FleetHud board={state.playerBoard} label="Your fleet" horizontal />
+            </div>
+          </motion.section>
         </div>
-      </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-start">
-        {/* Enemy waters — the focal point */}
-        <section className="flex flex-col items-center gap-3">
-          <header className="text-center">
-            <h2 className="text-lg font-semibold tracking-wide">Enemy waters</h2>
-            <p className="text-xs text-slate-400">Commander BOLT’s hidden fleet</p>
-          </header>
+        <Legend />
 
-          <motion.div
-            key={hint(state, queued)}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            role="status"
-            className={`max-w-md rounded-full px-4 py-1.5 text-center text-sm font-medium ${
-              playerTurn ? 'bg-bot-500/15 text-bot-400 ring-1 ring-bot-500/40' : 'bg-ocean-800 text-slate-300'
-            }`}
-          >
-            {hint(state, queued)}
-          </motion.div>
-
-          <motion.div
-            animate={
-              playerTurn
-                ? { scale: 1, boxShadow: '0 0 0 3px #19e0b0, 0 0 40px -6px #19e0b0aa' }
-                : { scale: 0.99, boxShadow: '0 0 0 3px #1b3a7a00, 0 0 0px 0px #19e0b000' }
-            }
-            transition={{ duration: 0.3 }}
-            className="relative rounded-2xl"
-          >
-            <Grid
-              board={state.aiBoard}
-              variant="enemy"
-              ariaLabel="Enemy board. Tap a square to fire."
-              disabled={gameOver}
-              onCellClick={onEnemyCell}
-              lastShot={state.lastPlayerShot?.coord ?? null}
-              queued={aiTurn ? queued?.coord ?? null : null}
-            />
-            <AnimatePresence>
-              {playerHitFlash && !reduceMotion && (
-                <motion.div
-                  key={`flash-${state.playerShots}`}
-                  initial={{ opacity: 0.35 }}
-                  animate={{ opacity: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.45 }}
-                  className={`pointer-events-none absolute inset-0 rounded-2xl ${
-                    state.lastPlayerShot?.kind === 'sunk' ? 'bg-sunk-500' : 'bg-hit-500'
-                  }`}
-                />
-              )}
-            </AnimatePresence>
-          </motion.div>
-
-          <div className="hidden w-full max-w-md lg:block">
+        {/* Commander docked at the bottom on small screens so lines are readable while playing */}
+        <div
+          ref={dockRef}
+          className={`fixed inset-x-0 bottom-0 z-30 border-t border-ocean-800 bg-ocean-950/90 px-4 py-3 backdrop-blur lg:hidden ${
+            gameOver ? 'hidden' : ''
+          }`}
+        >
+          <div className="mx-auto max-w-md">
             <CommanderBubble
               line={state.commander}
               muted={state.commanderMuted}
@@ -259,68 +352,32 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
               onToggleMute={() => dispatch({ type: 'TOGGLE_COMMANDER' })}
             />
           </div>
-
-          <div className="w-full max-w-md">
-            <FleetHud board={state.aiBoard} label="Enemy fleet" hideDamageUntilSunk horizontal />
-          </div>
-        </section>
-
-        {/* Your waters — secondary; mini-map on small screens */}
-        <motion.section
-          animate={aiHit ? { x: [0, -6, 6, -4, 4, 0] } : { x: 0 }}
-          transition={{ duration: 0.4 }}
-          key={`shake-${state.aiShots}`}
-          className="flex flex-col items-center gap-3"
-        >
-          <header className="text-center">
-            <h2 className="text-base font-semibold tracking-wide text-slate-300 lg:text-lg lg:text-slate-100">Your waters</h2>
-            <p className={`text-xs ${aiTurn ? 'text-hit-500' : 'text-slate-400'}`}>{aiTurn ? 'BOLT is aiming here…' : 'BOLT fires here'}</p>
-          </header>
-
-          <div className="hidden lg:block">{ownBoard(false)}</div>
-          <div className="flex flex-col items-center gap-2 lg:hidden">
-            {ownBoard(!ownExpanded)}
-            <button
-              type="button"
-              onClick={() => setOwnExpanded((v) => !v)}
-              className="text-xs text-slate-400 underline-offset-2 hover:text-bot-400 hover:underline"
-            >
-              {ownExpanded ? 'Shrink your board' : 'Expand your board'}
-            </button>
-          </div>
-
-          <div className="w-full max-w-md">
-            <FleetHud board={state.playerBoard} label="Your fleet" horizontal />
-          </div>
-        </motion.section>
-      </div>
-
-      <Legend />
-
-      {/* Commander docked at the bottom on small screens so lines are readable while playing */}
-      <div
-        ref={dockRef}
-        className={`fixed inset-x-0 bottom-0 z-30 border-t border-ocean-800 bg-ocean-950/90 px-4 py-3 backdrop-blur lg:hidden ${
-          gameOver ? 'hidden' : ''
-        }`}
-      >
-        <div className="mx-auto max-w-md">
-          <CommanderBubble
-            line={state.commander}
-            muted={state.commanderMuted}
-            thinking={aiTurn}
-            onToggleMute={() => dispatch({ type: 'TOGGLE_COMMANDER' })}
-          />
         </div>
-      </div>
 
+        <AnimatePresence>
+          {sunkBanner && dismissedBanner !== sunkBanner.key && (
+            <motion.div
+              key={sunkBanner.key}
+              initial={{ opacity: 0, scale: 0.6, rotate: -4 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 1.2 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              className={`pointer-events-none fixed inset-x-0 top-1/3 z-40 mx-auto w-max max-w-[90vw] rounded-2xl px-8 py-4 text-center text-2xl font-black shadow-2xl sm:text-3xl ${
+                sunkBanner.tone === 'good' ? 'bg-sunk-500 text-ocean-950' : 'bg-hit-700 text-white'
+              }`}
+            >
+              {sunkBanner.text}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
       {confirmRestart && (
         <div
+          ref={confirmRef}
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="restart-title"
           className="fixed inset-0 z-50 flex items-center justify-center bg-ocean-950/80 p-4 backdrop-blur-sm"
-          onKeyDown={(e) => e.key === 'Escape' && setConfirmRestart(false)}
         >
           <div className="w-full max-w-sm rounded-2xl bg-ocean-900 p-6 text-center shadow-[0_0_0_1px_#1b3a7a,0_30px_80px_-20px_#000]">
             <h2 id="restart-title" className="text-lg font-bold">
@@ -343,23 +400,6 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
           </div>
         </div>
       )}
-
-      <AnimatePresence>
-        {sunkBanner && dismissedBanner !== sunkBanner.key && (
-          <motion.div
-            key={sunkBanner.key}
-            initial={{ opacity: 0, scale: 0.6, rotate: -4 }}
-            animate={{ opacity: 1, scale: 1, rotate: 0 }}
-            exit={{ opacity: 0, scale: 1.2 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-            className={`pointer-events-none fixed inset-x-0 top-1/3 z-40 mx-auto w-max max-w-[90vw] rounded-2xl px-8 py-4 text-center text-2xl font-black shadow-2xl sm:text-3xl ${
-              sunkBanner.tone === 'good' ? 'bg-sunk-500 text-ocean-950' : 'bg-hit-700 text-white'
-            }`}
-          >
-            {sunkBanner.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </main>
+    </>
   )
 }

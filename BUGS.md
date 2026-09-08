@@ -96,6 +96,14 @@ screen.
 Also from automated code review: `isFleetValid` filtered ships by ID, which
 would misbehave if two ships ever shared one. Now filters by array index.
 
+### Found by re-testing the fixes
+A second browser pass on the fixed build caught three leftovers, now fixed:
+the restart confirmation could be Tabbed out of (fix: the battle screen is
+`inert` while it's open, Tab wraps, Escape closes from anywhere); the per-square
+white hit flash and expanding rings still played under "reduce motion"; and
+those rings, when a column-10 square was hit, poked past the right edge on a
+320 px screen (fix: `overflow-x-clip` on the page).
+
 ## How it's verified
 
 - **56 Vitest unit tests** on the rules engine, AI (incl. a regression test for

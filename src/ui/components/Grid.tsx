@@ -354,6 +354,7 @@ function RowCells({
   previewValid,
   onCellFocus,
 }: RowProps) {
+  const reduceMotion = useReducedMotion()
   return (
     <>
       <div
@@ -426,7 +427,7 @@ function RowCells({
                 className="pointer-events-none absolute inset-[15%] rounded-full border-2 border-dashed border-bot-400"
               />
             )}
-            {isLast && shot !== 'empty' && (
+            {isLast && shot !== 'empty' && !reduceMotion && (
               <>
                 <motion.span
                   key={`${key}-ring`}
