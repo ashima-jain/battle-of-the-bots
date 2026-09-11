@@ -7,7 +7,7 @@ const STEPS = [
   { icon: '💥', title: 'Sink them all', text: 'Hit every square of a ship to sink it. Sink all 5 before the bot sinks yours.' },
 ]
 
-export function Landing({ onStart }: { onStart: () => void }) {
+export function Landing({ onStart, onFriend }: { onStart: () => void; onFriend: () => void }) {
   return (
     <main className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center gap-10 px-6 py-16 text-center">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
@@ -43,10 +43,15 @@ export function Landing({ onStart }: { onStart: () => void }) {
       </motion.ol>
 
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} className="flex flex-col items-center gap-2">
-        <Button onClick={onStart} className="px-10 py-4 text-lg">
-          Play
-        </Button>
-        <p className="text-xs text-slate-500">Takes about 3 minutes. No sign-up.</p>
+        <div className="flex flex-col items-center gap-3 sm:flex-row">
+          <Button onClick={onStart} className="px-10 py-4 text-lg">
+            Play against BOLT
+          </Button>
+          <Button variant="ghost" onClick={onFriend} className="px-8 py-4 text-lg">
+            Play with a friend
+          </Button>
+        </div>
+        <p className="text-xs text-slate-500">Takes about 3 minutes. No sign-up. Friend mode: share a link, they join from their device.</p>
       </motion.div>
     </main>
   )

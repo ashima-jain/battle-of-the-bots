@@ -2,6 +2,7 @@ import { chooseShot, createAiMemory, observeShot, type AiMemory } from '../ai/co
 import {
   createBoard,
   fire,
+  isFleetValid,
   isSunk,
   moveShip,
   randomFleet,
@@ -10,6 +11,7 @@ import {
   type Coord,
   type Orientation,
   type Rng,
+  type Ship,
   type ShotResult,
 } from '../engine'
 import {
@@ -21,7 +23,11 @@ import {
   type VoiceMemory,
 } from '../personality'
 
-export type Phase = 'landing' | 'placement' | 'playerTurn' | 'aiTurn' | 'gameOver'
+/** `waiting`: online only — our fleet is placed, the opponent's isn't yet. `aiTurn` is the opponent's turn in either mode. */
+export type Phase = 'landing' | 'placement' | 'waiting' | 'playerTurn' | 'aiTurn' | 'gameOver'
+
+/** `solo` plays BOLT; `online` plays a remote human whose shots arrive as OPPONENT_FIRE. */
+export type Mode = 'solo' | 'online'
 
 export interface SpokenLine extends CommanderLine {
   /** Monotonic id so the UI can animate each new line. */
@@ -29,6 +35,12 @@ export interface SpokenLine extends CommanderLine {
 }
 
 export interface GameState {
+  mode: Mode
+  opponentName: string
+  /** Online: the opponent's fleet has arrived (aiBoard is theirs, not a random one). */
+  opponentFleetReady: boolean
+  /** Increments on every restart so a remote peer can tell a new match from the old one. */
+  round: number
   phase: Phase
   playerBoard: Board
   aiBoard: Board
@@ -53,6 +65,9 @@ export interface GameState {
 
 export type GameAction =
   | { type: 'START_SETUP' }
+  | { type: 'START_ONLINE' }
+  | { type: 'OPPONENT_FLEET'; ships: Ship[] }
+  | { type: 'OPPONENT_FIRE'; coord: Coord }
   | { type: 'SHUFFLE' }
   | { type: 'MOVE_SHIP'; shipId: string; bow: Coord; orientation: Orientation }
   | { type: 'ROTATE_SHIP'; shipId: string }
@@ -67,6 +82,10 @@ export type GameAction =
 
 export function createInitialState(rng: Rng): GameState {
   return {
+    mode: 'solo',
+    opponentName: 'BOLT',
+    opponentFleetReady: false,
+    round: 0,
     phase: 'landing',
     playerBoard: createBoard(randomFleet(rng)),
     aiBoard: createBoard(randomFleet(rng)),
@@ -105,6 +124,7 @@ function context(state: GameState, shipName?: string): CommanderContext {
 }
 
 function withLine(state: GameState, event: CommanderEvent, rng: Rng, shipName?: string): GameState {
+  if (state.mode === 'online') return state
   const { line, memory } = speak(event, context(state, shipName), state.voice, rng)
   if (!line) return { ...state, voice: memory }
   return {
@@ -117,7 +137,39 @@ function withLine(state: GameState, event: CommanderEvent, rng: Rng, shipName?: 
 
 function fresh(state: GameState, rng: Rng, phase: Phase): GameState {
   const next = createInitialState(rng)
-  return { ...next, phase, commanderMuted: state.commanderMuted, soundEnabled: state.soundEnabled }
+  return {
+    ...next,
+    phase,
+    mode: state.mode,
+    opponentName: state.opponentName,
+    round: state.round + 1,
+    commanderMuted: state.commanderMuted,
+    soundEnabled: state.soundEnabled,
+  }
+}
+
+/** Resolve a shot on the player's board by whoever the opponent is (BOLT or a remote human). */
+function opponentFire(state: GameState, coord: Coord, rng: Rng): GameState {
+  const out = fire(state.playerBoard, coord)
+  if (!out.ok) return state
+  const { result } = out
+  const hit = result.kind !== 'miss'
+  let next: GameState = {
+    ...state,
+    playerBoard: out.board,
+    aiMemory: observeShot(state.aiMemory, result),
+    lastAiShot: result,
+    aiShots: state.aiShots + 1,
+    aiHits: state.aiHits + (hit ? 1 : 0),
+    aiStreak: hit ? state.aiStreak + 1 : 0,
+  }
+  if (result.kind === 'sunk' && result.fleetSunk) {
+    next = { ...next, phase: 'gameOver', winner: 'ai' }
+    return withLine(next, 'AI_WIN', rng, result.ship.name)
+  }
+  next = { ...next, phase: 'playerTurn' }
+  if (result.kind === 'sunk') return withLine(next, 'AI_SUNK_PLAYER_SHIP', rng, result.ship.name)
+  return withLine(next, hit ? 'AI_HIT' : 'AI_MISS', rng)
 }
 
 export function createGameReducer(rng: Rng) {
@@ -125,6 +177,22 @@ export function createGameReducer(rng: Rng) {
     switch (action.type) {
       case 'START_SETUP':
         return state.phase === 'landing' ? { ...state, phase: 'placement' } : state
+
+      case 'START_ONLINE':
+        return state.phase === 'landing'
+          ? { ...state, phase: 'placement', mode: 'online', opponentName: 'Your friend', opponentFleetReady: false }
+          : state
+
+      case 'OPPONENT_FLEET': {
+        if (state.mode !== 'online' || state.opponentFleetReady || !isFleetValid(action.ships)) return state
+        if (state.phase !== 'placement' && state.phase !== 'waiting') return state
+        const next: GameState = { ...state, aiBoard: createBoard(action.ships), opponentFleetReady: true }
+        return state.phase === 'waiting' ? { ...next, phase: 'playerTurn' } : next
+      }
+
+      case 'OPPONENT_FIRE':
+        if (state.mode !== 'online' || state.phase !== 'aiTurn') return state
+        return opponentFire(state, action.coord, rng)
 
       case 'SHUFFLE': {
         if (state.phase !== 'placement') return state
@@ -145,6 +213,7 @@ export function createGameReducer(rng: Rng) {
 
       case 'READY': {
         if (state.phase !== 'placement') return state
+        if (state.mode === 'online' && !state.opponentFleetReady) return { ...state, phase: 'waiting' }
         return withLine({ ...state, phase: 'playerTurn' }, 'GAME_START', rng)
       }
 
@@ -173,28 +242,8 @@ export function createGameReducer(rng: Rng) {
       }
 
       case 'AI_FIRE': {
-        if (state.phase !== 'aiTurn') return state
-        const coord = chooseShot(state.aiMemory, rng)
-        const out = fire(state.playerBoard, coord)
-        if (!out.ok) return state
-        const { result } = out
-        const hit = result.kind !== 'miss'
-        let next: GameState = {
-          ...state,
-          playerBoard: out.board,
-          aiMemory: observeShot(state.aiMemory, result),
-          lastAiShot: result,
-          aiShots: state.aiShots + 1,
-          aiHits: state.aiHits + (hit ? 1 : 0),
-          aiStreak: hit ? state.aiStreak + 1 : 0,
-        }
-        if (result.kind === 'sunk' && result.fleetSunk) {
-          next = { ...next, phase: 'gameOver', winner: 'ai' }
-          return withLine(next, 'AI_WIN', rng, result.ship.name)
-        }
-        next = { ...next, phase: 'playerTurn' }
-        if (result.kind === 'sunk') return withLine(next, 'AI_SUNK_PLAYER_SHIP', rng, result.ship.name)
-        return withLine(next, hit ? 'AI_HIT' : 'AI_MISS', rng)
+        if (state.mode !== 'solo' || state.phase !== 'aiTurn') return state
+        return opponentFire(state, chooseShot(state.aiMemory, rng), rng)
       }
 
       case 'TAUNT_TICK':
