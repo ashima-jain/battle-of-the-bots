@@ -186,7 +186,8 @@ export function createGameReducer(rng: Rng) {
       case 'OPPONENT_FLEET': {
         if (state.mode !== 'online' || state.opponentFleetReady || !isFleetValid(action.ships)) return state
         if (state.phase !== 'placement' && state.phase !== 'waiting') return state
-        const next: GameState = { ...state, aiBoard: createBoard(action.ships), opponentFleetReady: true }
+        const fresh = action.ships.map((s) => ({ ...s, hits: 0 }))
+        const next: GameState = { ...state, aiBoard: createBoard(fresh), opponentFleetReady: true }
         return state.phase === 'waiting' ? { ...next, phase: 'playerTurn' } : next
       }
 

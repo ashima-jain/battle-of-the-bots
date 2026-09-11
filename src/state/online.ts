@@ -1,5 +1,5 @@
 import { createAiMemory } from '../ai/commander'
-import { isSunk, type Board, type Coord, type Ship } from '../engine'
+import { FLEET, inBounds, isSunk, type Board, type Coord, type Orientation, type Ship } from '../engine'
 import { createVoiceMemory } from '../personality'
 import type { GameState } from './gameReducer'
 
@@ -71,4 +71,48 @@ export function roomFromUrl(search: string): string | null {
 
 export function roomLink(origin: string, code: string): string {
   return `${origin}/?room=${code}`
+}
+
+/**
+ * Anything off the wire is untrusted: reject unknown shapes so a buggy or hostile peer can't
+ * crash the handlers, and rebuild ships from (kind, bow, orientation) alone so a forged
+ * fleet can't smuggle in pre-set hits, lengths or ids. Fleet legality is still checked by
+ * the reducer via `isFleetValid`.
+ */
+export function parseNetMessage(data: unknown): NetMessage | null {
+  if (!isRecord(data)) return null
+  switch (data.type) {
+    case 'hello':
+      return typeof data.name === 'string' ? { type: 'hello', name: data.name } : null
+    case 'fleet': {
+      if (!Array.isArray(data.ships)) return null
+      const ships = data.ships.map(parseShip)
+      return ships.every((s) => s !== null) ? { type: 'fleet', ships } : null
+    }
+    case 'fire':
+      return isCoord(data.coord) ? { type: 'fire', coord: data.coord } : null
+    case 'restart':
+      return { type: 'restart' }
+    case 'state':
+      return isRecord(data.state) && typeof data.state.phase === 'string' ? { type: 'state', state: data.state as WireState } : null
+    default:
+      return null
+  }
+}
+
+function parseShip(raw: unknown): Ship | null {
+  if (!isRecord(raw) || !isCoord(raw.bow)) return null
+  const spec = FLEET.find((f) => f.kind === raw.kind)
+  const orientation: Orientation | null =
+    raw.orientation === 'horizontal' || raw.orientation === 'vertical' ? raw.orientation : null
+  if (!spec || !orientation) return null
+  return { id: spec.kind, kind: spec.kind, name: spec.name, length: spec.length, bow: raw.bow, orientation, hits: 0 }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null
+}
+
+function isCoord(v: unknown): v is Coord {
+  return isRecord(v) && Number.isInteger(v.row) && Number.isInteger(v.col) && inBounds({ row: v.row as number, col: v.col as number })
 }

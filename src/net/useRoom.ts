@@ -1,13 +1,12 @@
 import Peer, { type DataConnection } from 'peerjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ROOM_PREFIX, type NetMessage } from '../state/online'
+import { parseNetMessage, ROOM_PREFIX, type NetMessage } from '../state/online'
 
 export type RoomStatus = 'connecting' | 'waiting' | 'connected' | 'closed' | 'error'
 
 const PING_MS = 2000
 const DEAD_AFTER_MS = 7000
 const PING = { type: 'ping' } as const
-type Wire = NetMessage | typeof PING
 
 export interface Room {
   status: RoomStatus
@@ -61,12 +60,12 @@ export function useRoom(role: 'host' | 'guest', code: string, onMessage: (msg: N
       conn.on('data', (data) => {
         if (cancelled) return
         armDeadTimer()
-        const msg = data as Wire
-        if (msg.type !== 'ping') onMessageRef.current(msg)
+        const msg = parseNetMessage(data)
+        if (msg) onMessageRef.current(msg)
       })
       conn.on('close', closed)
       conn.on('iceStateChanged', (s) => {
-        if (s === 'disconnected' || s === 'failed' || s === 'closed') closed()
+        if (s === 'failed' || s === 'closed') closed()
       })
       conn.on('error', (e) => {
         if (cancelled) return

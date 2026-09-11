@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { randomFleet, seededRng, shipCells, shotAt, type Coord } from '../../engine'
 import { createGameReducer, createInitialState, type GameState } from '../gameReducer'
-import { mirror, newRoomCode, redactForGuest, roomFromUrl, roomLink } from '../online'
+import { mirror, newRoomCode, parseNetMessage, redactForGuest, roomFromUrl, roomLink } from '../online'
 
 function host(seed = 1) {
   const rng = seededRng(seed)
@@ -147,5 +147,37 @@ describe('room links', () => {
     expect(roomFromUrl('?room=abc')).toBeNull()
     expect(roomFromUrl('?room=ABCDE0')).toBeNull()
     expect(roomFromUrl('')).toBeNull()
+  })
+})
+
+describe('parseNetMessage', () => {
+  it('rejects junk and unknown shapes', () => {
+    expect(parseNetMessage(null)).toBeNull()
+    expect(parseNetMessage('fire')).toBeNull()
+    expect(parseNetMessage({ type: 'ping' })).toBeNull()
+    expect(parseNetMessage({ type: 'fire', coord: { row: 10, col: 0 } })).toBeNull()
+    expect(parseNetMessage({ type: 'fire', coord: { row: 1.5, col: 0 } })).toBeNull()
+    expect(parseNetMessage({ type: 'fleet', ships: [{ kind: 'carrier' }] })).toBeNull()
+    expect(parseNetMessage({ type: 'hello', name: 3 })).toBeNull()
+  })
+
+  it('rebuilds ships from kind/bow/orientation so forged hits, lengths and ids are discarded', () => {
+    const forged = randomFleet(seededRng(3)).map((s) => ({ ...s, hits: s.length, length: 1, id: 'x', name: 'Boat' }))
+    const msg = parseNetMessage({ type: 'fleet', ships: forged })
+    expect(msg?.type).toBe('fleet')
+    if (msg?.type !== 'fleet') return
+    for (const [i, ship] of msg.ships.entries()) {
+      expect(ship.hits).toBe(0)
+      expect(ship.id).toBe(forged[i].kind)
+      expect(ship.length).toBe(randomFleet(seededRng(3))[i].length)
+    }
+  })
+
+  it('reducer zeroes hits on an incoming fleet regardless', () => {
+    const { reduce, state } = host()
+    const ships = randomFleet(seededRng(5)).map((s) => ({ ...s, hits: s.length }))
+    const next = reduce(state, { type: 'OPPONENT_FLEET', ships })
+    expect(next.opponentFleetReady).toBe(true)
+    expect(next.aiBoard.ships.every((s) => s.hits === 0)).toBe(true)
   })
 })
