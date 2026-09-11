@@ -6,7 +6,8 @@ import { Button } from '../components/Button'
 
 function shareText(state: GameState): string {
   const accuracy = state.playerShots ? Math.round((state.playerHits / state.playerShots) * 100) : 0
-  const outcome = state.winner === 'player' ? 'I beat Commander BOLT' : 'Commander BOLT beat me'
+  const who = state.mode === 'online' ? state.opponentName : 'Commander BOLT'
+  const outcome = state.winner === 'player' ? `I beat ${who}` : `${who} beat me`
   return `Battle of the Bots — ${outcome} in ${state.playerShots} shots (${accuracy}% accuracy)\n\n${emojiGrid(state.aiBoard)}`
 }
 

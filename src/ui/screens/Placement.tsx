@@ -27,7 +27,15 @@ function coordFromPoint(x: number, y: number): Coord | null {
   return { row, col }
 }
 
-export function Placement({ board, dispatch }: { board: Board; dispatch: React.Dispatch<GameAction> }) {
+export function Placement({
+  board,
+  dispatch,
+  opponentName = 'Commander BOLT',
+}: {
+  board: Board
+  dispatch: React.Dispatch<GameAction>
+  opponentName?: string
+}) {
   const dragRef = useRef<Drag | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -155,7 +163,7 @@ export function Placement({ board, dispatch }: { board: Board; dispatch: React.D
           board={displayBoard}
           variant="own"
           title="Your waters"
-          subtitle="Commander BOLT can’t see this"
+          subtitle={`${opponentName} can’t see this`}
           ariaLabel="Your board. Drag ships to move, tap to rotate."
           selectedShipId={selected}
           onShipPointerDown={onShipPointerDown}

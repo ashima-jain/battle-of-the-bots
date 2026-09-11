@@ -12,11 +12,11 @@ export function useGame(): [GameState, React.Dispatch<GameAction>] {
   const [state, dispatch] = useReducer(reducer, mathRng, createInitialState)
 
   useEffect(() => {
-    if (state.phase !== 'aiTurn') return
+    if (state.mode !== 'solo' || state.phase !== 'aiTurn') return
     const delay = AI_THINK_MS[state.lastPlayerShot?.kind ?? 'miss']
     const id = window.setTimeout(() => dispatch({ type: 'AI_FIRE' }), delay)
     return () => window.clearTimeout(id)
-  }, [state.phase, state.aiShots, state.lastPlayerShot])
+  }, [state.mode, state.phase, state.aiShots, state.lastPlayerShot])
 
   useEffect(() => {
     if (!state.commander || state.phase === 'gameOver') return
@@ -25,10 +25,10 @@ export function useGame(): [GameState, React.Dispatch<GameAction>] {
   }, [state.commander, state.phase])
 
   useEffect(() => {
-    if (state.phase !== 'playerTurn' || state.commanderMuted) return
+    if (state.mode !== 'solo' || state.phase !== 'playerTurn' || state.commanderMuted) return
     const id = window.setTimeout(() => dispatch({ type: 'TAUNT_TICK' }), TAUNT_IDLE_MS)
     return () => window.clearTimeout(id)
-  }, [state.phase, state.turn, state.commanderMuted])
+  }, [state.mode, state.phase, state.turn, state.commanderMuted])
 
   return [state, dispatch]
 }

@@ -12,15 +12,16 @@ import { useSound } from '../hooks/useSound'
 
 interface QueuedShot {
   coord: Coord
-  /** Player turn number the shot was queued during; fires when that AI turn ends. */
+  /** Player shot count when queued; fires once the opponent's reply lands, dropped after the player's next shot. */
   turn: number
 }
 
 function hint(state: GameState, queued: QueuedShot | null): string {
+  const name = state.opponentName
   if (state.phase === 'aiTurn') {
     return queued
-      ? `Locked on ${coordLabel(queued.coord)} — fires when BOLT is done. Tap it again to cancel.`
-      : 'BOLT is aiming… (tap a square to queue your next shot)'
+      ? `Locked on ${coordLabel(queued.coord)} — fires when ${name} is done. Tap it again to cancel.`
+      : `${name} is aiming… (tap a square to queue your next shot)`
   }
   const shot = state.lastPlayerShot
   if (!shot) return 'Your turn. Tap any square on the enemy grid to fire.'
@@ -53,6 +54,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
     }
   }, [state.aiShots, state.lastAiShot, playShot])
 
+  const online = state.mode === 'online'
   const playerTurn = state.phase === 'playerTurn'
   const aiTurn = state.phase === 'aiTurn'
   const gameOver = state.phase === 'gameOver'
@@ -69,7 +71,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
   }, [gameOver, state.winner, play])
 
   const [queuedRaw, setQueued] = useState<QueuedShot | null>(null)
-  const queued = queuedRaw && queuedRaw.turn === state.turn && !gameOver ? queuedRaw : null
+  const queued = queuedRaw && queuedRaw.turn === state.playerShots && !gameOver ? queuedRaw : null
   const lastFiredAt = useRef(0)
 
   useEffect(() => {
@@ -83,7 +85,9 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
     } else if (aiTurn) {
       if (performance.now() - lastFiredAt.current < QUEUE_GUARD_MS) return
       // Tapping the queued square again un-queues it.
-      setQueued((prev) => (prev && prev.turn === state.turn && sameCoord(prev.coord, coord) ? null : { coord, turn: state.turn }))
+      setQueued((prev) =>
+        prev && prev.turn === state.playerShots && sameCoord(prev.coord, coord) ? null : { coord, turn: state.playerShots },
+      )
     }
   }
 
@@ -148,7 +152,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
           }
         : {
             key: `a-${aiSink!.seq}`,
-            text: `BOLT sank your ${aiSink!.ship.name}`,
+            text: `${state.opponentName} sank your ${aiSink!.ship.name}`,
             tone: 'bad' as const,
           }
   const bannerKey = sunkBanner?.key
@@ -234,7 +238,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
           <section className="flex flex-col items-center gap-3">
             <header className="text-center">
               <h2 className="text-lg font-semibold tracking-wide">Enemy waters</h2>
-              <p className="text-xs text-slate-400">Commander BOLT’s hidden fleet</p>
+              <p className="text-xs text-slate-400">{online ? `${state.opponentName}’s hidden fleet` : 'Commander BOLT’s hidden fleet'}</p>
             </header>
 
             <motion.div
@@ -289,7 +293,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
               </AnimatePresence>
             </motion.div>
 
-            <div className="hidden w-full max-w-md lg:block">
+            <div className={`w-full max-w-md ${online ? 'hidden' : 'hidden lg:block'}`}>
               <CommanderBubble
                 line={state.commander}
                 muted={state.commanderMuted}
@@ -313,7 +317,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
             <header className="text-center">
               <h2 className="text-base font-semibold tracking-wide text-slate-300 lg:text-lg lg:text-slate-100">Your waters</h2>
               <p className={`text-xs ${aiTurn ? 'text-hit-500' : 'text-slate-400'}`}>
-                {aiTurn ? 'BOLT is aiming here…' : 'BOLT fires here'}
+                {aiTurn ? `${state.opponentName} is aiming here…` : `${state.opponentName} fires here`}
               </p>
             </header>
 
@@ -341,7 +345,7 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
         <div
           ref={dockRef}
           className={`fixed inset-x-0 bottom-0 z-30 border-t border-ocean-800 bg-ocean-950/90 px-4 py-3 backdrop-blur lg:hidden ${
-            gameOver ? 'hidden' : ''
+            gameOver || online ? 'hidden' : ''
           }`}
         >
           <div className="mx-auto max-w-md">
@@ -383,7 +387,9 @@ export function Battle({ state, dispatch }: { state: GameState; dispatch: React.
             <h2 id="restart-title" className="text-lg font-bold">
               Abandon this battle?
             </h2>
-            <p className="mt-2 text-sm text-slate-400">You’ll start over with a fresh fleet.</p>
+            <p className="mt-2 text-sm text-slate-400">
+              {online ? 'Both of you will start over with fresh fleets.' : 'You’ll start over with a fresh fleet.'}
+            </p>
             <div className="mt-5 flex justify-center gap-2">
               <Button variant="ghost" autoFocus onClick={() => setConfirmRestart(false)}>
                 Keep playing
