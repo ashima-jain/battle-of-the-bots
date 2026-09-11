@@ -26,6 +26,7 @@ export function Online({ role, code, onLeave }: Props) {
   const [state, dispatch] = useGame()
   const [myName, setMyName] = useState(role === 'host' ? 'Player 1' : 'Player 2')
   const [theirName, setTheirName] = useState<string | null>(null)
+  const [entered, setEntered] = useState(false)
   const [hostState, setHostState] = useState<WireState | null>(null)
   const seenRound = useRef<number | null>(null)
 
@@ -104,10 +105,21 @@ export function Online({ role, code, onLeave }: Props) {
   }
 
   let screen: React.ReactNode
-  if (!connected && room.status !== 'closed' && room.status !== 'error') {
-    screen = <Lobby role={role} code={code} status={room.status} name={myName} onName={setMyName} onLeave={onLeave} />
+  if (!(connected && entered) && room.status !== 'closed' && room.status !== 'error') {
+    screen = (
+      <Lobby
+        role={role}
+        code={code}
+        status={room.status}
+        name={myName}
+        onName={setMyName}
+        entered={entered}
+        onEnter={() => setEntered(true)}
+        onLeave={onLeave}
+      />
+    )
   } else if (view.phase === 'landing' || view.phase === 'placement') {
-    screen = <Placement board={view.playerBoard} dispatch={gameDispatch} />
+    screen = <Placement board={view.playerBoard} dispatch={gameDispatch} opponentName={opponentName} />
   } else if (view.phase === 'waiting') {
     screen = <Waiting name={opponentName} />
   } else {
@@ -149,6 +161,8 @@ function Lobby({
   status,
   name,
   onName,
+  entered,
+  onEnter,
   onLeave,
 }: {
   role: 'host' | 'guest'
@@ -156,6 +170,8 @@ function Lobby({
   status: string
   name: string
   onName: (n: string) => void
+  entered: boolean
+  onEnter: () => void
   onLeave: () => void
 }) {
   const link = roomLink(window.location.origin, code)
@@ -181,15 +197,27 @@ function Lobby({
         <p className="mb-3 text-xs uppercase tracking-[0.3em] text-bot-400">Play with a friend</p>
         <h1 className="text-3xl font-black tracking-tight">{role === 'host' ? 'Invite your friend' : 'Joining the battle'}</h1>
 
-        <label className="mt-6 block text-left text-xs text-slate-400">
-          Your name
-          <input
-            value={name}
-            onChange={(e) => onName(e.target.value)}
-            maxLength={24}
-            className="mt-1 w-full rounded-xl border border-ocean-700 bg-ocean-900 px-3 py-2 text-base text-slate-100 outline-none focus:border-bot-400"
-          />
-        </label>
+        <form
+          className="mt-6 flex items-end gap-2 text-left"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onEnter()
+          }}
+        >
+          <label className="block flex-1 text-xs text-slate-400">
+            Your name
+            <input
+              value={name}
+              onChange={(e) => onName(e.target.value)}
+              maxLength={24}
+              disabled={entered}
+              className="mt-1 w-full rounded-xl border border-ocean-700 bg-ocean-900 px-3 py-2 text-base text-slate-100 outline-none focus:border-bot-400 disabled:opacity-60"
+            />
+          </label>
+          <Button type="submit" disabled={entered}>
+            {entered ? 'Saved' : 'Continue'}
+          </Button>
+        </form>
 
         {role === 'host' && (
           <div className="mt-5 rounded-2xl bg-ocean-900/70 p-4 text-left shadow-[0_0_0_1px_#1b3a7a]">
@@ -203,9 +231,15 @@ function Lobby({
 
         <p role="status" className="mt-6 flex items-center justify-center gap-2 text-sm text-slate-300">
           <Pulse />
-          {status === 'connecting' ? 'Connecting…' : role === 'host' ? 'Waiting for your friend to open the link…' : 'Waiting for the host…'}
+          {status === 'connecting'
+            ? 'Connecting…'
+            : status === 'connected'
+              ? 'Connected — hit Continue to place your ships.'
+              : role === 'host'
+                ? 'Waiting for your friend to open the link…'
+                : 'Waiting for the host…'}
         </p>
-        <p className="mt-2 text-xs text-slate-500">Keep this tab open. You’ll both place ships once they join; the host fires first.</p>
+        <p className="mt-2 text-xs text-slate-500">Keep this tab open. You’ll both place ships once you’re both in; the host fires first.</p>
 
         <Button variant="ghost" className="mt-6" onClick={onLeave}>
           Back
